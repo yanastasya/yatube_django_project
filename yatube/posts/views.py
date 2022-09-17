@@ -1,6 +1,5 @@
-from ast import Delete
 from django.contrib.auth.decorators import login_required
-from django.shortcuts import redirect, render, get_object_or_404
+from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.cache import cache_page
 
 from .forms import PostForm, CommentForm
@@ -17,7 +16,7 @@ def index(request):
     post_list = Post.objects.select_related('group', 'author').all()
     page_obj = get_page(request, post_list)
     context = {
-        'page_obj': page_obj,        
+        'page_obj': page_obj,
     }
 
     return render(request, template, context)
@@ -58,13 +57,16 @@ def profile(request, username):
     page_obj = get_page(request, post_list)
 
     if request.user.is_authenticated:
-        following = Follow.objects.filter(user=request.user, author=author).exists() 
-    
+        following = Follow.objects.filter(
+            user=request.user,
+            author=author
+        ).exists()
+
         if request.user != author:
-            user_not_author = True 
+            user_not_author = True
         else:
-            user_not_author = False          
-    
+            user_not_author = False
+
         context = {
             'author': author,
             'page_obj': page_obj,
@@ -73,13 +75,13 @@ def profile(request, username):
         }
 
         return render(request, template, context)
-    
-    context = {
-            'author': author,
-            'page_obj': page_obj,   
-        }   
 
-    return render(request, template, context)    
+    context = {
+        'author': author,
+        'page_obj': page_obj,
+    }
+
+    return render(request, template, context)
 
 
 def post_detail(request, post_id):
@@ -159,43 +161,45 @@ def post_edit(request, post_id):
 @login_required
 def add_comment(request, post_id):
 
-    post = get_object_or_404(Post, pk=post_id)
+    post = get_object_or_404(Post, id=post_id)
     form = CommentForm(request.POST or None)
     if form.is_valid():
         comment = form.save(commit=False)
         comment.author = request.user
         comment.post = post
         comment.save()
-    return redirect('posts:post_detail', post_id=post_id)
+    return redirect('posts:post_detail', post.id)
+
 
 @login_required
 def follow_index(request):
     """Страница с лентой постов авторов, на которых подписан пользователь."""
-    
-    template='posts/follow.html'
-    
+
+    template = 'posts/follow.html'
+
     post_list = Post.objects.filter(author__following__user=request.user)
     page_obj = get_page(request, post_list)
     context = {
-        'page_obj': page_obj,        
+        'page_obj': page_obj,
     }
-    
+
     return render(request, template, context)
-    
+
 
 @login_required
 def profile_follow(request, username):
     """Подписаться на автора."""
-        
+
     author = get_object_or_404(User, username=username)
     if (
-        request.user == author or
-        Follow.objects.filter(user=request.user, author=author).exists() 
+        request.user == author
+        or Follow.objects.filter(user=request.user, author=author).exists()
     ):
         return redirect('posts:profile', username)
-    
+
     Follow.objects.create(user=request.user, author=author)
     return redirect('posts:profile', username)
+
 
 @login_required
 def profile_unfollow(request, username):

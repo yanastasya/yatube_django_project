@@ -27,7 +27,9 @@
                 action="{% url 'posts:post_create' %}"              
               {% endif %}
               >              
-              {% include 'includes/form_errors_and_fields.html' %}      
+              {% include 'includes/form_errors.html' %}
+              {% csrf_token %}
+              {% include 'includes/form_fields.html' %}      
               <div class="d-flex justify-content-end">                
                 <button type="submit" class="btn btn-primary">
                   {% if is_edit %}

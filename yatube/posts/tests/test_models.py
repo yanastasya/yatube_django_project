@@ -22,9 +22,9 @@ class PostModelTest(TestCase):
             text='Тестовый пост',
         )
 
-    def setUp(self):        
+    def setUp(self):
         cache.clear()
-        
+
     def test_models_have_correct_object_names(self):
         """У моделей корректно работает __str__."""
 

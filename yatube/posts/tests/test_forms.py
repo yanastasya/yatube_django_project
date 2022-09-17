@@ -1,5 +1,6 @@
 import shutil
 import tempfile
+from xml.etree.ElementTree import Comment
 
 from django.conf import settings
 from django.test import Client, TestCase, override_settings
@@ -9,21 +10,28 @@ from django.db.models.fields.files import FileField, ImageFieldFile
 from django.core.cache import cache
 
 from ..forms import PostForm
-from ..models import Group, Post, User
+from ..models import Group, Post, User, Comment
 
 TEMP_MEDIA_ROOT = tempfile.mkdtemp(dir=settings.BASE_DIR)
 
 
 @override_settings(MEDIA_ROOT=TEMP_MEDIA_ROOT)
 class PostFormTests(TestCase):
+    """Проверка формы создания и редактирования поста
+    на страницах post_create, post_edit.
+    """
 
     @classmethod
     def setUpClass(cls):
         super().setUpClass()
 
-        cls.authorized_client = Client()
-        cls.user = User.objects.create_user(username='TestUser')
-        cls.authorized_client.force_login(cls.user)
+        cls.authorized_client_1 = Client()
+        cls.user_1 = User.objects.create_user(username='TestUser1')
+        cls.authorized_client_1.force_login(cls.user_1)
+
+        cls.authorized_client_2 = Client()
+        cls.user_2 = User.objects.create_user(username='TestUser2')
+        cls.authorized_client_2.force_login(cls.user_2)
 
         cls.group_1 = Group.objects.create(
             title='Тестовая группа1',
@@ -36,15 +44,15 @@ class PostFormTests(TestCase):
             description='Тестовое описание2',
         )
         cls.post = Post.objects.create(
-            author=cls.user,
+            author=cls.user_1,
             text='Тестовый пост',
             group=cls.group_1,
         )
         cls.form = PostForm()
 
-    def setUp(self):        
+    def setUp(self):
         cache.clear()
-        
+
     @classmethod
     def tearDownClass(cls):
         super().tearDownClass()
@@ -77,7 +85,7 @@ class PostFormTests(TestCase):
 
         posts_id = list(Post.objects.values_list('id', flat=True))
 
-        response = self.authorized_client.post(
+        response = self.authorized_client_1.post(
             reverse('posts:post_create'),
             data=form_data,
             follow=True
@@ -105,7 +113,7 @@ class PostFormTests(TestCase):
         self.assertEqual(added_post[0].image, image)
 
     def test_form_edit_post(self):
-        """при отправке валидной формы со страницы post_edit
+        """При отправке валидной формы со страницы post_edit
         происходит изменение поста с post_id в базе данных.
         """
 
@@ -115,7 +123,7 @@ class PostFormTests(TestCase):
             'text': 'Обновлённая запись поста',
             'group': self.group_2.id,
         }
-        response = self.authorized_client.post(
+        response = self.authorized_client_1.post(
             reverse('posts:post_edit', kwargs={'post_id': self.post.id}),
             data=form_data,
             follow=True
@@ -131,8 +139,78 @@ class PostFormTests(TestCase):
         self.assertTrue(
             Post.objects.filter(
                 id=self.post.id,
-                author=self.user,
+                author=self.user_1,
                 text=form_data['text'],
                 group=self.group_2,
             ).exists()
         )
+
+
+class CommentFormTests(TestCase):
+    """Проверка формы отправки комментария."""
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+
+        cls.author = User.objects.create_user(username='Author')
+
+        cls.authorized_client = Client()
+        cls.user = User.objects.create_user(username='TestUser')
+        cls.authorized_client.force_login(cls.user)
+
+        cls.post = Post.objects.create(
+            author=cls.author,
+            text='Тестовый пост',
+        )
+
+    @classmethod
+    def tearDownClass(cls):
+        super().tearDownClass()
+        shutil.rmtree(TEMP_MEDIA_ROOT, ignore_errors=True)
+
+    def setUp(self):
+        cache.clear()
+
+    def test_form_add_comment(self):
+        """После успешной отправки комментарий появляется на странице поста."""
+
+        comments = set(
+            self.authorized_client.get(
+                reverse(
+                    'posts:post_detail',
+                    kwargs={'post_id': self.post.id}
+                )
+            ).context['comments']
+        )
+        form_data = {
+            'text': 'Тестовый комментарий',
+            'post': self.post.id,
+        }
+        response = self.authorized_client.post(
+            reverse(
+                'posts:add_comment',
+                kwargs={'post_id': self.post.id}
+            ),
+            data=form_data,
+            follow=True
+        )
+        self.assertRedirects(
+            response,
+            reverse(
+                'posts:post_detail',
+                kwargs={'post_id': self.post.id}
+            )
+        )
+        comments_update = set(
+            self.authorized_client.get(
+                reverse(
+                    'posts:post_detail',
+                    kwargs={'post_id': self.post.id}
+                )
+            ).context['comments']
+        )
+        added_comment = list(comments_update.difference(comments))[0]
+
+        self.assertEqual(len(comments_update), len(comments) + 1)
+        self.assertTrue(Comment.objects.filter(id=added_comment.id).exists())

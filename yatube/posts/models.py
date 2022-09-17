@@ -83,7 +83,7 @@ class Comment(PubDateModel):
         on_delete=models.CASCADE,
         related_name='comments',
         verbose_name='Автор комментария',
-    )    
+    )
 
     text = models.TextField(
         verbose_name='Текст комментария',
@@ -106,5 +106,3 @@ class Follow(models.Model):
         related_name='following',
         verbose_name='Автор, на которого подписываются',
     )
-
-

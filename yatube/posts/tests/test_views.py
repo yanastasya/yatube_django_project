@@ -1,6 +1,7 @@
-import time
 import shutil
 import tempfile
+
+from http import HTTPStatus
 
 from django import forms
 from django.conf import settings
@@ -10,7 +11,7 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from django.db.models.fields.files import FileField, ImageFieldFile
 from django.core.cache import cache
 
-from ..models import Group, Post, User
+from ..models import Group, Post, User, Follow, Comment
 from ..constants import NUMBER_OF_POSTS_ON_PAGE, NUMBER_OF_TEST_POSTS
 
 
@@ -19,6 +20,9 @@ TEMP_MEDIA_ROOT = tempfile.mkdtemp(dir=settings.BASE_DIR)
 
 @override_settings(MEDIA_ROOT=TEMP_MEDIA_ROOT)
 class PostPagesTests(TestCase):
+    """Проверка контекста страниц приложения Posts и
+    соответствия URL адресов шаблонам. """
+
     @classmethod
     def setUpClass(cls):
         super().setUpClass()
@@ -29,7 +33,7 @@ class PostPagesTests(TestCase):
 
         cls.authorized_client_2 = Client()
         cls.user_2 = User.objects.create_user(username='TestUser2')
-        cls.authorized_client_2.force_login(cls.user_2)
+        cls.authorized_client_2.force_login(cls.user_1)
 
         cls.group_1 = Group.objects.create(
             title='Тестовая группа1',
@@ -61,12 +65,17 @@ class PostPagesTests(TestCase):
             group=cls.group_1,
             image=cls.uploaded
         )
-        time.sleep(0.001)
 
         cls.post_2 = Post.objects.create(
             author=cls.user_1,
             text='Тестовый пост_2',
             group=cls.group_1,
+        )
+
+        cls.comment = Comment.objects.create(
+            post=cls.post_1,
+            author=cls.user_2,
+            text='Тестовый комментарий'
         )
 
         cls.image = ImageFieldFile(
@@ -100,19 +109,28 @@ class PostPagesTests(TestCase):
             'post_edit': reverse(
                 'posts:post_edit',
                 kwargs={'post_id': cls.post_1.id}
-            )
+            ),
+            'add_comment': reverse(
+                'posts:add_comment',
+                kwargs={'post_id': cls.post_1.id}
+            ),
+            'follow_index': reverse(
+                'posts:follow_index'
+            ),
         }
 
     @classmethod
     def tearDownClass(cls):
-        super().tearDownClass()        
+        super().tearDownClass()
         shutil.rmtree(TEMP_MEDIA_ROOT, ignore_errors=True)
 
-    def setUp(self):        
+    def setUp(self):
         cache.clear()
-        
+
     def test_views_pages_uses_correct_template(self):
-        """URL-адрес использует соответствующий шаблон."""
+        """URL-адреса страниц приложения posts используют
+        соответствующие шаблоны.
+        """
 
         templates_pages_names = {
             self.PAGES_REVERSE['index']: 'posts/index.html',
@@ -121,6 +139,7 @@ class PostPagesTests(TestCase):
             self.PAGES_REVERSE['post_detail']: 'posts/post_detail.html',
             self.PAGES_REVERSE['post_create']: 'posts/create_post.html',
             self.PAGES_REVERSE['post_edit']: 'posts/create_post.html',
+            self.PAGES_REVERSE['follow_index']: 'posts/follow.html',
         }
 
         for reverse_name, template in templates_pages_names.items():
@@ -128,68 +147,160 @@ class PostPagesTests(TestCase):
                 response = self.authorized_client_1.get(reverse_name)
                 self.assertTemplateUsed(response, template)
 
-    def test_views_index_group_list_profile_show_correct_context(self):
-        """В контекст шаблонов index, group_list и profile входит
-        список постов (page_obj). В контекст шаблонов post_detail,
-        post_edit входит post.
+    def test_views_index_context(self):
+        """В контекст шаблона index входит page_obj
+        и отображается картинка поста.
         """
 
-        PAGES = {
-            self.PAGES_REVERSE['index'],
-            self.PAGES_REVERSE['group_list_1'],
-            self.PAGES_REVERSE['profile'],
-            self.PAGES_REVERSE['post_detail'],
-            self.PAGES_REVERSE['post_edit'],
+        response = self.authorized_client_1.get(self.PAGES_REVERSE['index'])
+        post = response.context['page_obj'][1]
 
+        post_atribute_and_expected = {
+            post.id: self.post_1.id,
+            post.author: self.post_1.author,
+            post.text: self.post_1.text,
+            post.group: self.post_1.group,
+            post.image: self.image,
         }
 
-        for page in PAGES:
+        for atribute, expected in post_atribute_and_expected.items():
+            self.assertEqual(
+                atribute,
+                expected,
+                'несоответствие в контексте страницы index (page_obj)'
+            )
 
-            response = self.authorized_client_1.get(page)
-            context = response.context
-
-            if 'page_obj' in context:
-                post = response.context['page_obj'][1]
-
-            else:
-                post = response.context['post']
-
-            post_atribute_and_expected = {
-                post.id: self.post_1.id,
-                post.author: self.post_1.author,
-                post.text: self.post_1.text,
-                post.group: self.post_1.group,
-                post.image: self.image,
-            }
-
-            for atribute, expected in post_atribute_and_expected.items():
-                with self.subTest(atribute=atribute):
-                    self.assertEqual(atribute, expected)
-
-    def test_views_group_list_page_show_correct_context(self):
-        """В контекст шаблона group_list входит group."""
+    def test_views_group_list_context(self):
+        """В контекст шаблона group_list входит page_obj и group.
+        У поста отображается картинка.
+        """
 
         response = self.authorized_client_1.get(
             self.PAGES_REVERSE['group_list_1']
         )
-        group = response.context['group']
-        self.assertEqual(group.id, self.group_1.id)
 
-    def test_views_profile_page_show_correct_context(self):
-        """В контекста шаблона profile входит author."""
+        post = response.context['page_obj'][1]
+        group = response.context['group']
+
+        post_atribute_and_expected = {
+            post.id: self.post_1.id,
+            post.author: self.post_1.author,
+            post.text: self.post_1.text,
+            post.group: self.post_1.group,
+            post.image: self.image,
+        }
+
+        for atribute, expected in post_atribute_and_expected.items():
+            self.assertEqual(
+                atribute,
+                expected,
+                'несоответствие в контексте страницы group_list (page_obj)'
+            )
+
+        self.assertEqual(
+            group.id,
+            self.group_1.id,
+            'несоответствие в контексте страницы group_list (group)'
+        )
+
+    def test_views_profile_context(self):
+        """В контекст шаблона profile входит page_obj и author.
+        У поста отображается картинка.
+        """
 
         response = self.authorized_client_1.get(self.PAGES_REVERSE['profile'])
-        author = response.context['author']
-        self.assertEqual(author, self.post_1.author)
 
-    def test_views_post_edit_page_show_correct_context(self):
-        """В контекст шаблона post_edit входит форма редактирования поста
-        и булева переменная is_edit.
+        post = response.context['page_obj'][1]
+        author = response.context['author']
+
+        post_atribute_and_expected = {
+            post.id: self.post_1.id,
+            post.author: self.post_1.author,
+            post.text: self.post_1.text,
+            post.group: self.post_1.group,
+            post.image: self.image,
+        }
+
+        for atribute, expected in post_atribute_and_expected.items():
+            self.assertEqual(
+                atribute,
+                expected,
+                'несоответствие в контексте страницы profile (page_obj)'
+            )
+
+        self.assertEqual(
+            author,
+            self.post_1.author,
+            'несоответствие в контексте страницы profile (author)'
+        )
+
+    def test_views_profile_context(self):
+        """В контекст шаблона post_detail входит post, form и comments,
+        отображается картинка."""
+
+        response = self.authorized_client_1.get(
+            self.PAGES_REVERSE['post_detail']
+        )
+
+        post = response.context['post']
+        comments = response.context['comments'][0]
+        form = response.context.get('form')
+
+        post_atribute_and_expected = {
+            post.id: self.post_1.id,
+            post.author: self.post_1.author,
+            post.text: self.post_1.text,
+            post.group: self.post_1.group,
+            post.image: self.image,
+        }
+
+        for atribute, expected in post_atribute_and_expected.items():
+            self.assertEqual(
+                atribute,
+                expected,
+                'несоответствие в контексте страницы post_detail (post)'
+            )
+
+        self.assertEqual(
+            comments.id,
+            self.comment.id,
+            'несоответствие в контексте страницы post_detail (comment)'
+        )
+
+        self.assertIsInstance(
+            form.fields.get('text'),
+            forms.fields.CharField,
+            'несоответствие в контексте страницы post_detail (form)'
+        )
+
+    def test_views_post_edit_context(self):
+        """В контекст шаблона post_edit входит post, form,
+        булева переменная is_edit.
         """
 
         response = self.authorized_client_1.get(
             self.PAGES_REVERSE['post_edit']
         )
+
+        post = response.context['post']
+        form = response.context.get('form')
+        is_edit = response.context['is_edit']
+
+        post_atribute_and_expected = {
+            post.id: self.post_1.id,
+            post.author: self.post_1.author,
+            post.text: self.post_1.text,
+            post.group: self.post_1.group,
+            post.image: self.image,
+        }
+
+        for atribute, expected in post_atribute_and_expected.items():
+            self.assertEqual(
+                atribute,
+                expected,
+                'несоответствие в контексте страницы post_edit (post)'
+            )
+
         form_contents = {
             'text': self.post_1.text,
             'group': self.group_1,
@@ -198,21 +309,28 @@ class PostPagesTests(TestCase):
         for value, expected in form_contents.items():
             with self.subTest(value=value):
                 form_content = getattr(
-                    response.context.get('form').instance,
+                    form.instance,
                     value
                 )
-                self.assertEqual(form_content, expected)
+                self.assertEqual(
+                    form_content,
+                    expected,
+                    'несоответствие в контексте страницы post_edit (form)'
+                )
 
-        is_edit = response.context['is_edit']
-        self.assertEqual(is_edit, True)
+        self.assertEqual(
+            is_edit,
+            True,
+            'несоответствие в контексте страницы post_edit (is_edit)'
+        )
 
-    def test_views_post_create_page_show_correct_context(self):
+    def test_views_post_create_context(self):
         """Шаблон post_create сформирован с правильным контекстом:
         форма создания поста.
         """
 
         response = self.authorized_client_1.get(
-            self.PAGES_REVERSE['post_edit']
+            self.PAGES_REVERSE['post_create']
         )
         form_fields = {
             'text': forms.fields.CharField,
@@ -221,7 +339,11 @@ class PostPagesTests(TestCase):
         for value, expected in form_fields.items():
             with self.subTest(value=value):
                 form_field = response.context.get('form').fields.get(value)
-                self.assertIsInstance(form_field, expected)
+                self.assertIsInstance(
+                    form_field,
+                    expected,
+                    'несоответствие в контексте страницы post_create (form)'
+                )
 
     def test_views_post_is_on_expected_pages(self):
         """При создании поста c указанной группой этот пост
@@ -239,7 +361,11 @@ class PostPagesTests(TestCase):
                 context = self.authorized_client_1.get(
                     reverse_name
                 ).context['page_obj']
-                self.assertEqual(Post.objects.latest('pub_date'), context[0])
+                self.assertEqual(
+                    Post.objects.latest('pub_date'),
+                    context[0],
+                    f'новый пост не найден в контексте страницв {reverse_name}'
+                )
 
     def test_views_post_is_not_on_unexpected_pages(self):
         """При создании поста c указанной группой этот пост
@@ -250,47 +376,198 @@ class PostPagesTests(TestCase):
             self.PAGES_REVERSE['group_list_2']
         )
         context = response.context['page_obj']
-        self.assertNotIn(self.post_1, context)
+        self.assertNotIn(
+            self.post_1,
+            context,
+            'Пост появился на странице группы, в которую он не входит'
+        )
 
     def test_cache_index(self):
-        """Проверкаработы кеша."""
-        
-        response = self.authorized_client_1.get(self.PAGES_REVERSE['index'])
-        
+        """Проверка работы кеша на странице index."""
+
+        response = self.authorized_client_1.get(
+            self.PAGES_REVERSE['index']
+        )
         posts = response.content
-        
+
         Post.objects.create(
             text='Пост для проверки кеша',
             author=self.user_1,
         )
-        response_first = self.authorized_client_1.get(self.PAGES_REVERSE['index'])        
-        first_posts = response_first.content
-        
-        self.assertEqual(first_posts, posts)
+        response_again = self.authorized_client_1.get(
+            self.PAGES_REVERSE['index']
+        )
+        update_posts = response_again.content
+        self.assertEqual(
+            update_posts,
+            posts,
+            'Кеш не работает, новый пост сразу появляется на странице'
+        )
+        cache.clear()
+        response_again_2 = self.authorized_client_1.get(
+            self.PAGES_REVERSE['index']
+        )
+        update_posts_2 = response_again_2.content
+        self.assertNotEqual(
+            posts,
+            update_posts_2,
+            'Кеш не работает, новый пост не появляется на странице'
+        )
 
+
+class FollowTests(TestCase):
+    """Проверка функций подписки/отписки. """
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+
+        cls.authorized_author = Client()
+        cls.author = User.objects.create_user(username='Author')
+        cls.authorized_author.force_login(cls.author)
+
+        cls.authorized_follower = Client()
+        cls.follower = User.objects.create_user(username='Follower')
+        cls.authorized_follower.force_login(cls.follower)
+
+        cls.authorized_not_follower = Client()
+        cls.not_follower = User.objects.create_user(username='Not_follower')
+        cls.authorized_not_follower.force_login(cls.not_follower)
+
+        cls.post_1 = Post.objects.create(
+            author=cls.author,
+            text='Тестовый пост_1',
+        )
+        cls.comment = Comment.objects.create(
+            post=cls.post_1,
+            author=cls.follower,
+            text='Тестовый комментарий'
+        )
+
+        cls.PAGES_REVERSE = {
+            'follow_index': reverse(
+                'posts:follow_index'
+            ),
+            'profile_follow': reverse(
+                'posts:profile_follow',
+                kwargs={'username': cls.author.username}
+            ),
+            'profile_unfollow': reverse(
+                'posts:profile_unfollow',
+                kwargs={'username': cls.author.username}
+            ),
+        }
+
+    @classmethod
+    def tearDownClass(cls):
+        super().tearDownClass()
+        shutil.rmtree(TEMP_MEDIA_ROOT, ignore_errors=True)
+
+    def setUp(self):
         cache.clear()
 
-        response_second = self.authorized_client_1.get(self.PAGES_REVERSE['index'])      
-        new_posts = response_second.content
-        
-        self.assertNotEqual(first_posts, new_posts)
-        
-    def test_authorized_follover(self):
+    def test_authorized_can_follow_and_unfollow(self):
         """Авторизованный пользователь может подписываться на других авторов
-        и удалять их из подписок."""
-        pass    
-            
+        и удалять их из подписок.
+        """
+
+        response = self.authorized_follower.get(
+            self.PAGES_REVERSE['profile_follow'],
+            follow=True
+        )
+        self.assertEqual(
+            response.status_code,
+            HTTPStatus.OK,
+            'Авторизованный пользователь не имеет доступа к подписке.'
+        )
+        self.assertTrue(
+            Follow.objects.filter(
+                user=self.follower,
+                author=self.author
+            ).exists(),
+            'Авторизованный пользователь не смог подписаться на автора.'
+        )
+
+        response = self.authorized_follower.get(
+            self.PAGES_REVERSE['profile_unfollow']
+        )
+        self.assertFalse(
+            Follow.objects.filter(
+                user=self.follower,
+                author=self.author
+            ).exists(),
+            'Авторизованный пользователь не смог отписаться от автора.'
+        )
+
     def test_new_post_folloving(self):
-        """Новая запись пользователя появляется в ленте тех, кто на него подписан
-        и не появляется в ленте тех, кто не подписан."""
-        pass    
+        """Новая запись пользователя появляется в ленте тех,
+        кто на него подписан и не появляется в ленте тех, кто не подписан.
+        """
+
+        Follow.objects.create(user=self.follower, author=self.author)
+        self.assertFalse(
+            Follow.objects.filter(
+                user=self.not_follower,
+                author=self.author
+            ).exists()
+        )
+
+        follow_index_context_follower = set(
+            self.authorized_follower.get(
+                self.PAGES_REVERSE['follow_index']
+            ).context['page_obj'].object_list
+        )
+        follow_index_context_not_follower = set(
+            self.authorized_not_follower.get(
+                self.PAGES_REVERSE['follow_index']
+            ).context['page_obj'].object_list
+        )
+
+        new_post = Post.objects.create(
+            author=self.author,
+            text='Пост для проверки ленты подписок',
+        )
+        new_post.save()
+
+        follow_index_context_follower_new = set(
+            self.authorized_follower.get(
+                self.PAGES_REVERSE['follow_index']
+            ).context['page_obj'].object_list
+        )
+        follow_index_context_not_follower_new = set(
+            self.authorized_not_follower.get(
+                self.PAGES_REVERSE['follow_index']
+            ).context['page_obj'].object_list
+        )
+        self.assertEqual(
+            new_post,
+            list(
+                follow_index_context_follower_new.difference(
+                    follow_index_context_follower
+                )
+            )[0],
+            'Новый пост не попал в ленту подписчика.'
+        )
+        self.assertEqual(
+            len(
+                follow_index_context_not_follower_new.difference(
+                    follow_index_context_not_follower
+                )
+            ), 0,
+        )
+
 
 class PaginatorViewsTest(TestCase):
     """Проверка работы пагинатора."""
 
-    def setUp(self):        
+    @classmethod
+    def tearDownClass(cls):
+        super().tearDownClass()
+        shutil.rmtree(TEMP_MEDIA_ROOT, ignore_errors=True)
+
+    def setUp(self):
         cache.clear()
-    
+
     @classmethod
     def setUpClass(cls):
         super().setUpClass()
@@ -331,7 +608,7 @@ class PaginatorViewsTest(TestCase):
                 response = self.client.get(reverse_name)
                 self.assertEqual(
                     len(response.context['page_obj']),
-                    NUMBER_OF_POSTS_ON_PAGE
+                    NUMBER_OF_POSTS_ON_PAGE,
                 )
 
     def test_paginator_second_page(self):
@@ -342,8 +619,5 @@ class PaginatorViewsTest(TestCase):
                 response = self.client.get(reverse_name + '?page=2')
                 self.assertEqual(
                     len(response.context['page_obj']),
-                    NUMBER_OF_TEST_POSTS - NUMBER_OF_POSTS_ON_PAGE
+                    NUMBER_OF_TEST_POSTS - NUMBER_OF_POSTS_ON_PAGE,
                 )
-
-    
-    
