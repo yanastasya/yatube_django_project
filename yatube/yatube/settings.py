@@ -13,13 +13,12 @@ ALLOWED_HOSTS = [
     '127.0.0.1',
     '[::1]',
     'testserver',
-] 
-
+]
 CACHES = {
     'default': {
         'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
     }
-} 
+}
 INSTALLED_APPS = [
     'django.contrib.admin',
     'django.contrib.auth',
