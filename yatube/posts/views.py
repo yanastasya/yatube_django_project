@@ -27,12 +27,7 @@ def group_posts(request, slug):
 
     template = 'posts/group_list.html'
     group = get_object_or_404(Group, slug=slug)
-    post_list = Post.objects.select_related(
-        'group',
-        'author',
-    ).filter(
-        group=group
-    )
+    post_list = group.posts.select_related('author')
     page_obj = get_page(request, post_list)
 
     context = {
@@ -48,37 +43,18 @@ def profile(request, username):
 
     template = 'posts/profile.html'
     author = User.objects.get(username=username)
-    post_list = Post.objects.select_related(
-        'group',
-        'author',
-    ).filter(
-        author=author
-    )
+    post_list = author.posts.select_related('author', 'group')
     page_obj = get_page(request, post_list)
 
-    if request.user.is_authenticated:
-        following = Follow.objects.filter(
-            user=request.user,
-            author=author
-        ).exists()
-
-        if request.user != author:
-            user_not_author = True
-        else:
-            user_not_author = False
-
-        context = {
-            'author': author,
-            'page_obj': page_obj,
-            'following': following,
-            'user_not_author': user_not_author,
-        }
-
-        return render(request, template, context)
+    following = request.user.is_authenticated and Follow.objects.filter(
+        user=request.user,
+        author=author
+    ).exists()
 
     context = {
         'author': author,
         'page_obj': page_obj,
+        'following': following,
     }
 
     return render(request, template, context)
@@ -168,6 +144,7 @@ def add_comment(request, post_id):
         comment.author = request.user
         comment.post = post
         comment.save()
+
     return redirect('posts:post_detail', post.id)
 
 
@@ -191,13 +168,12 @@ def profile_follow(request, username):
     """Подписаться на автора."""
 
     author = get_object_or_404(User, username=username)
-    if (
+    if not (
         request.user == author
         or Follow.objects.filter(user=request.user, author=author).exists()
     ):
-        return redirect('posts:profile', username)
+        Follow.objects.create(user=request.user, author=author)
 
-    Follow.objects.create(user=request.user, author=author)
     return redirect('posts:profile', username)
 
 

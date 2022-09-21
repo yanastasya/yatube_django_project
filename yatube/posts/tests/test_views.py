@@ -1,18 +1,17 @@
 import shutil
 import tempfile
-
 from http import HTTPStatus
 
 from django import forms
+from django.db.models.fields.files import FileField, ImageFieldFile
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.conf import settings
+from django.core.cache import cache
 from django.test import Client, TestCase, override_settings
 from django.urls import reverse
-from django.core.files.uploadedfile import SimpleUploadedFile
-from django.db.models.fields.files import FileField, ImageFieldFile
-from django.core.cache import cache
 
-from ..models import Group, Post, User, Follow, Comment
 from ..constants import NUMBER_OF_POSTS_ON_PAGE, NUMBER_OF_TEST_POSTS
+from ..models import Group, Post, User, Follow, Comment
 
 
 TEMP_MEDIA_ROOT = tempfile.mkdtemp(dir=settings.BASE_DIR)
@@ -119,6 +118,24 @@ class PostPagesTests(TestCase):
             ),
         }
 
+    def post_atribute_and_expected(self, post):
+        """Метод для проверки поста в контексте страниц."""
+
+        post_atribute_and_expected = {
+            post.id: self.post_1.id,
+            post.author: self.post_1.author,
+            post.text: self.post_1.text,
+            post.group: self.post_1.group,
+            post.image: self.image,
+        }
+        
+        for atribute, expected in post_atribute_and_expected.items():
+            self.assertEqual(
+                atribute,
+                expected,
+            )
+        
+
     @classmethod
     def tearDownClass(cls):
         super().tearDownClass()
@@ -155,20 +172,7 @@ class PostPagesTests(TestCase):
         response = self.authorized_client_1.get(self.PAGES_REVERSE['index'])
         post = response.context['page_obj'][1]
 
-        post_atribute_and_expected = {
-            post.id: self.post_1.id,
-            post.author: self.post_1.author,
-            post.text: self.post_1.text,
-            post.group: self.post_1.group,
-            post.image: self.image,
-        }
-
-        for atribute, expected in post_atribute_and_expected.items():
-            self.assertEqual(
-                atribute,
-                expected,
-                'несоответствие в контексте страницы index (page_obj)'
-            )
+        self.post_atribute_and_expected(post)        
 
     def test_views_group_list_context(self):
         """В контекст шаблона group_list входит page_obj и group.
@@ -182,20 +186,7 @@ class PostPagesTests(TestCase):
         post = response.context['page_obj'][1]
         group = response.context['group']
 
-        post_atribute_and_expected = {
-            post.id: self.post_1.id,
-            post.author: self.post_1.author,
-            post.text: self.post_1.text,
-            post.group: self.post_1.group,
-            post.image: self.image,
-        }
-
-        for atribute, expected in post_atribute_and_expected.items():
-            self.assertEqual(
-                atribute,
-                expected,
-                'несоответствие в контексте страницы group_list (page_obj)'
-            )
+        self.post_atribute_and_expected(post)
 
         self.assertEqual(
             group.id,
@@ -213,20 +204,7 @@ class PostPagesTests(TestCase):
         post = response.context['page_obj'][1]
         author = response.context['author']
 
-        post_atribute_and_expected = {
-            post.id: self.post_1.id,
-            post.author: self.post_1.author,
-            post.text: self.post_1.text,
-            post.group: self.post_1.group,
-            post.image: self.image,
-        }
-
-        for atribute, expected in post_atribute_and_expected.items():
-            self.assertEqual(
-                atribute,
-                expected,
-                'несоответствие в контексте страницы profile (page_obj)'
-            )
+        self.post_atribute_and_expected(post)
 
         self.assertEqual(
             author,
@@ -234,7 +212,7 @@ class PostPagesTests(TestCase):
             'несоответствие в контексте страницы profile (author)'
         )
 
-    def test_views_profile_context(self):
+    def test_views_post_detail_context(self):
         """В контекст шаблона post_detail входит post, form и comments,
         отображается картинка."""
 
@@ -243,26 +221,13 @@ class PostPagesTests(TestCase):
         )
 
         post = response.context['post']
-        comments = response.context['comments'][0]
+        comment = response.context['comments'][0]
         form = response.context.get('form')
 
-        post_atribute_and_expected = {
-            post.id: self.post_1.id,
-            post.author: self.post_1.author,
-            post.text: self.post_1.text,
-            post.group: self.post_1.group,
-            post.image: self.image,
-        }
-
-        for atribute, expected in post_atribute_and_expected.items():
-            self.assertEqual(
-                atribute,
-                expected,
-                'несоответствие в контексте страницы post_detail (post)'
-            )
+        self.post_atribute_and_expected(post)
 
         self.assertEqual(
-            comments.id,
+            comment.id,
             self.comment.id,
             'несоответствие в контексте страницы post_detail (comment)'
         )
@@ -286,20 +251,7 @@ class PostPagesTests(TestCase):
         form = response.context.get('form')
         is_edit = response.context['is_edit']
 
-        post_atribute_and_expected = {
-            post.id: self.post_1.id,
-            post.author: self.post_1.author,
-            post.text: self.post_1.text,
-            post.group: self.post_1.group,
-            post.image: self.image,
-        }
-
-        for atribute, expected in post_atribute_and_expected.items():
-            self.assertEqual(
-                atribute,
-                expected,
-                'несоответствие в контексте страницы post_edit (post)'
-            )
+        self.post_atribute_and_expected(post)
 
         form_contents = {
             'text': self.post_1.text,
@@ -362,9 +314,8 @@ class PostPagesTests(TestCase):
                     reverse_name
                 ).context['page_obj']
                 self.assertEqual(
-                    Post.objects.latest('pub_date'),
-                    context[0],
-                    f'новый пост не найден в контексте страницв {reverse_name}'
+                    self.post_2,
+                    context[0],                    
                 )
 
     def test_views_post_is_not_on_unexpected_pages(self):
@@ -466,10 +417,17 @@ class FollowTests(TestCase):
     def setUp(self):
         cache.clear()
 
-    def test_authorized_can_follow_and_unfollow(self):
-        """Авторизованный пользователь может подписываться на других авторов
-        и удалять их из подписок.
+    def test_authorized_can_follow(self):
+        """Авторизованный пользователь может подписываться
+        на других авторов.
         """
+
+        self.assertFalse(
+            Follow.objects.filter(
+                user=self.follower,
+                author=self.author
+            ).exists(),
+        ) 
 
         response = self.authorized_follower.get(
             self.PAGES_REVERSE['profile_follow'],
@@ -478,33 +436,85 @@ class FollowTests(TestCase):
         self.assertEqual(
             response.status_code,
             HTTPStatus.OK,
-            'Авторизованный пользователь не имеет доступа к подписке.'
         )
+
         self.assertTrue(
             Follow.objects.filter(
                 user=self.follower,
                 author=self.author
-            ).exists(),
-            'Авторизованный пользователь не смог подписаться на автора.'
+            ).exists(),            
+        )
+                
+    def test_authorized_can_unfollow(self):
+        """Авторизованный пользователь может удалять
+        авторов из подписок.
+        """
+
+        follow = Follow.objects.create(user=self.follower, author=self.author)
+        follow.save()        
+        
+        self.assertTrue(
+            Follow.objects.filter(
+                user=self.follower,
+                author=self.author,                
+            ).exists()            
         )
 
         response = self.authorized_follower.get(
-            self.PAGES_REVERSE['profile_unfollow']
+            self.PAGES_REVERSE['profile_unfollow'],
+            follow=True
         )
+
+        self.assertEqual(
+            response.status_code,
+            HTTPStatus.OK,
+        )
+
         self.assertFalse(
             Follow.objects.filter(
                 user=self.follower,
-                author=self.author
-            ).exists(),
-            'Авторизованный пользователь не смог отписаться от автора.'
+                author=self.author,
+            ).exists()
         )
 
-    def test_new_post_folloving(self):
-        """Новая запись пользователя появляется в ленте тех,
-        кто на него подписан и не появляется в ленте тех, кто не подписан.
+    def test_new_post_follover(self):
+        """Новая запись автора пользователя появляется
+        в ленте его подписчиков.
         """
 
         Follow.objects.create(user=self.follower, author=self.author)
+        
+        follow_index_context = set(
+            self.authorized_follower.get(
+                self.PAGES_REVERSE['follow_index']
+            ).context['page_obj'].object_list
+        )
+        new_post = Post.objects.create(
+            author=self.author,
+            text='Пост для проверки ленты подписок',
+        )
+        new_post.save()
+
+        follow_index_context_new = set(
+            self.authorized_follower.get(
+                self.PAGES_REVERSE['follow_index']
+            ).context['page_obj'].object_list
+        )
+
+        self.assertEqual(
+            new_post,
+            list(
+                follow_index_context_new.difference(
+                    follow_index_context
+                )
+            )[0],
+        )
+
+    def test_new_post_folloving(self):
+        """Новая запись автора не появляется в ленте тех,
+        кто на него не подписан.
+        """
+
         self.assertFalse(
             Follow.objects.filter(
                 user=self.not_follower,
@@ -512,12 +522,7 @@ class FollowTests(TestCase):
             ).exists()
         )
 
-        follow_index_context_follower = set(
-            self.authorized_follower.get(
-                self.PAGES_REVERSE['follow_index']
-            ).context['page_obj'].object_list
-        )
-        follow_index_context_not_follower = set(
+        follow_index_context = set(
             self.authorized_not_follower.get(
                 self.PAGES_REVERSE['follow_index']
             ).context['page_obj'].object_list
@@ -529,29 +534,16 @@ class FollowTests(TestCase):
         )
         new_post.save()
 
-        follow_index_context_follower_new = set(
-            self.authorized_follower.get(
-                self.PAGES_REVERSE['follow_index']
-            ).context['page_obj'].object_list
-        )
-        follow_index_context_not_follower_new = set(
+        follow_index_context_new = set(
             self.authorized_not_follower.get(
                 self.PAGES_REVERSE['follow_index']
             ).context['page_obj'].object_list
         )
-        self.assertEqual(
-            new_post,
-            list(
-                follow_index_context_follower_new.difference(
-                    follow_index_context_follower
-                )
-            )[0],
-            'Новый пост не попал в ленту подписчика.'
-        )
+        
         self.assertEqual(
             len(
-                follow_index_context_not_follower_new.difference(
-                    follow_index_context_not_follower
+                follow_index_context_new.difference(
+                    follow_index_context
                 )
             ), 0,
         )

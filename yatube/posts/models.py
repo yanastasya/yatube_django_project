@@ -2,21 +2,17 @@ from django.contrib.auth import get_user_model
 from django.db import models
 
 from .constants import MAX_LENGHT_OF_RETURN_TEXT
-from core.models import PubDateModel
+from core.models import TextAndPubDateModel
 
 User = get_user_model()
 
 
-class Post(PubDateModel):
+class Post(TextAndPubDateModel):
     """Модель Post используется для хранения постов в блоге.
     У пользователя есть возможность публиковать посты в общей ленте
     и выбирать тематическую группу, в которой появится его пост.
     """
 
-    text = models.TextField(
-        'Текст поста',
-        help_text='Введите текст поста'
-    )
     author = models.ForeignKey(
         User,
         on_delete=models.CASCADE,
@@ -69,7 +65,7 @@ class Group(models.Model):
         return self.title
 
 
-class Comment(PubDateModel):
+class Comment(TextAndPubDateModel):
     """Комментирование постов."""
     post = models.ForeignKey(
         Post,
@@ -83,10 +79,6 @@ class Comment(PubDateModel):
         on_delete=models.CASCADE,
         related_name='comments',
         verbose_name='Автор комментария',
-    )
-
-    text = models.TextField(
-        verbose_name='Текст комментария',
     )
 
 

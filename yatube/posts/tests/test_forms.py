@@ -1,6 +1,5 @@
 import shutil
 import tempfile
-from xml.etree.ElementTree import Comment
 
 from django.conf import settings
 from django.test import Client, TestCase, override_settings
@@ -110,6 +109,7 @@ class PostFormTests(TestCase):
         self.assertEqual(len(added_post), 1)
         self.assertEqual(added_post[0].group.id, form_data['group'])
         self.assertEqual(added_post[0].text, form_data['text'])
+        self.assertEqual(added_post[0].author, self.post.author)
         self.assertEqual(added_post[0].image, image)
 
     def test_form_edit_post(self):
@@ -175,14 +175,8 @@ class CommentFormTests(TestCase):
     def test_form_add_comment(self):
         """После успешной отправки комментарий появляется на странице поста."""
 
-        comments = set(
-            self.authorized_client.get(
-                reverse(
-                    'posts:post_detail',
-                    kwargs={'post_id': self.post.id}
-                )
-            ).context['comments']
-        )
+        comments_id = list(Comment.objects.values_list('id', flat=True))
+
         form_data = {
             'text': 'Тестовый комментарий',
             'post': self.post.id,
@@ -202,15 +196,9 @@ class CommentFormTests(TestCase):
                 kwargs={'post_id': self.post.id}
             )
         )
-        comments_update = set(
-            self.authorized_client.get(
-                reverse(
-                    'posts:post_detail',
-                    kwargs={'post_id': self.post.id}
-                )
-            ).context['comments']
-        )
-        added_comment = list(comments_update.difference(comments))[0]
+        added_comment = Comment.objects.exclude(id__in=comments_id)
 
-        self.assertEqual(len(comments_update), len(comments) + 1)
-        self.assertTrue(Comment.objects.filter(id=added_comment.id).exists())
+        self.assertEqual(len(added_comment), 1)
+        self.assertEqual(added_comment[0].text, form_data['text'])
+        self.assertEqual(added_comment[0].post.id, form_data['post'])
+        self.assertEqual(added_comment[0].author, self.user)
