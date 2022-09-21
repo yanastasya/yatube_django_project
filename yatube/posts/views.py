@@ -43,13 +43,14 @@ def profile(request, username):
 
     template = 'posts/profile.html'
     author = User.objects.get(username=username)
-    post_list = author.posts.select_related('author', 'group')
+    post_list = author.posts.select_related('group')
     page_obj = get_page(request, post_list)
 
-    following = request.user.is_authenticated and Follow.objects.filter(
-        user=request.user,
-        author=author
-    ).exists()
+    following = (
+        request.user.is_authenticated
+        and request.user != author
+        and Follow.objects.filter(user=request.user, author=author).exists()
+    )
 
     context = {
         'author': author,

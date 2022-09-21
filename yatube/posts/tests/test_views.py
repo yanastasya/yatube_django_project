@@ -32,7 +32,7 @@ class PostPagesTests(TestCase):
 
         cls.authorized_client_2 = Client()
         cls.user_2 = User.objects.create_user(username='TestUser2')
-        cls.authorized_client_2.force_login(cls.user_1)
+        cls.authorized_client_2.force_login(cls.user_2)
 
         cls.group_1 = Group.objects.create(
             title='Тестовая группа1',
@@ -77,6 +77,11 @@ class PostPagesTests(TestCase):
             text='Тестовый комментарий'
         )
 
+        cls.follow = Follow.objects.create(
+            user=cls.user_2,
+            author=cls.user_1
+        )
+
         cls.image = ImageFieldFile(
             name='posts/small.gif',
             instance=cls.post_1,
@@ -118,6 +123,11 @@ class PostPagesTests(TestCase):
             ),
         }
 
+    @classmethod
+    def tearDownClass(cls):
+        super().tearDownClass()
+        shutil.rmtree(TEMP_MEDIA_ROOT, ignore_errors=True)
+
     def post_atribute_and_expected(self, post):
         """Метод для проверки поста в контексте страниц."""
 
@@ -134,10 +144,6 @@ class PostPagesTests(TestCase):
                 atribute,
                 expected,
             )
-
-    def tearDownClass(cls):
-        super().tearDownClass()
-        shutil.rmtree(TEMP_MEDIA_ROOT, ignore_errors=True)
 
     def setUp(self):
         cache.clear()
@@ -193,22 +199,33 @@ class PostPagesTests(TestCase):
         )
 
     def test_views_profile_context(self):
-        """В контекст шаблона profile входит page_obj и author.
+        """В контекст шаблона profile входит page_obj и author и following.
         У поста отображается картинка.
+        follofing=true только если пользователь авторизован, не автор
+        и уже подписан на автора.
         """
 
-        response = self.authorized_client_1.get(self.PAGES_REVERSE['profile'])
+        response_1 = self.authorized_client_1.get(
+            self.PAGES_REVERSE['profile']
+        )
 
-        post = response.context['page_obj'][1]
-        author = response.context['author']
+        post = response_1.context['page_obj'][1]
+        author = response_1.context['author']
+        following_false = response_1.context['following']
 
         self.post_atribute_and_expected(post)
 
         self.assertEqual(
             author,
             self.post_1.author,
-            'несоответствие в контексте страницы profile (author)'
         )
+        self.assertEqual(following_false, False)
+
+        response_2 = self.authorized_client_2.get(
+            self.PAGES_REVERSE['profile']
+        )
+        following_true = response_2.context['following']
+        self.assertEqual(following_true, True)
 
     def test_views_post_detail_context(self):
         """В контекст шаблона post_detail входит post, form и comments,
@@ -550,11 +567,6 @@ class FollowTests(TestCase):
 class PaginatorViewsTest(TestCase):
     """Проверка работы пагинатора."""
 
-    @classmethod
-    def tearDownClass(cls):
-        super().tearDownClass()
-        shutil.rmtree(TEMP_MEDIA_ROOT, ignore_errors=True)
-
     def setUp(self):
         cache.clear()
 
@@ -589,6 +601,11 @@ class PaginatorViewsTest(TestCase):
             reverse('posts:group_list', kwargs={'slug': cls.group.slug}),
             reverse('posts:profile', kwargs={'username': cls.user.username}),
         }
+
+    @classmethod
+    def tearDownClass(cls):
+        super().tearDownClass()
+        shutil.rmtree(TEMP_MEDIA_ROOT, ignore_errors=True)
 
     def test_paginator_first_page(self):
         """"Первая страница содержит ожидаемое колличество записей."""
