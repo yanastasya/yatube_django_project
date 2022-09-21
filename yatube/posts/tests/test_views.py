@@ -128,15 +128,13 @@ class PostPagesTests(TestCase):
             post.group: self.post_1.group,
             post.image: self.image,
         }
-        
+
         for atribute, expected in post_atribute_and_expected.items():
             self.assertEqual(
                 atribute,
                 expected,
             )
-        
 
-    @classmethod
     def tearDownClass(cls):
         super().tearDownClass()
         shutil.rmtree(TEMP_MEDIA_ROOT, ignore_errors=True)
@@ -172,7 +170,7 @@ class PostPagesTests(TestCase):
         response = self.authorized_client_1.get(self.PAGES_REVERSE['index'])
         post = response.context['page_obj'][1]
 
-        self.post_atribute_and_expected(post)        
+        self.post_atribute_and_expected(post)
 
     def test_views_group_list_context(self):
         """В контекст шаблона group_list входит page_obj и group.
@@ -315,7 +313,7 @@ class PostPagesTests(TestCase):
                 ).context['page_obj']
                 self.assertEqual(
                     self.post_2,
-                    context[0],                    
+                    context[0],
                 )
 
     def test_views_post_is_not_on_unexpected_pages(self):
@@ -427,7 +425,7 @@ class FollowTests(TestCase):
                 user=self.follower,
                 author=self.author
             ).exists(),
-        ) 
+        )
 
         response = self.authorized_follower.get(
             self.PAGES_REVERSE['profile_follow'],
@@ -442,22 +440,22 @@ class FollowTests(TestCase):
             Follow.objects.filter(
                 user=self.follower,
                 author=self.author
-            ).exists(),            
+            ).exists(),
         )
-                
+
     def test_authorized_can_unfollow(self):
         """Авторизованный пользователь может удалять
         авторов из подписок.
         """
 
         follow = Follow.objects.create(user=self.follower, author=self.author)
-        follow.save()        
-        
+        follow.save()
+
         self.assertTrue(
             Follow.objects.filter(
                 user=self.follower,
-                author=self.author,                
-            ).exists()            
+                author=self.author,
+            ).exists()
         )
 
         response = self.authorized_follower.get(
@@ -483,7 +481,7 @@ class FollowTests(TestCase):
         """
 
         Follow.objects.create(user=self.follower, author=self.author)
-        
+
         follow_index_context = set(
             self.authorized_follower.get(
                 self.PAGES_REVERSE['follow_index']
@@ -539,7 +537,7 @@ class FollowTests(TestCase):
                 self.PAGES_REVERSE['follow_index']
             ).context['page_obj'].object_list
         )
-        
+
         self.assertEqual(
             len(
                 follow_index_context_new.difference(
