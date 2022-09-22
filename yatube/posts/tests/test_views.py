@@ -123,6 +123,9 @@ class PostPagesTests(TestCase):
             ),
         }
 
+    def setUp(self):
+        cache.clear()
+
     @classmethod
     def tearDownClass(cls):
         super().tearDownClass()
@@ -144,9 +147,6 @@ class PostPagesTests(TestCase):
                 atribute,
                 expected,
             )
-
-    def setUp(self):
-        cache.clear()
 
     def test_views_pages_uses_correct_template(self):
         """URL-адреса страниц приложения posts используют
@@ -465,8 +465,7 @@ class FollowTests(TestCase):
         авторов из подписок.
         """
 
-        follow = Follow.objects.create(user=self.follower, author=self.author)
-        follow.save()
+        Follow.objects.create(user=self.follower, author=self.author)
 
         self.assertTrue(
             Follow.objects.filter(
@@ -508,7 +507,6 @@ class FollowTests(TestCase):
             author=self.author,
             text='Пост для проверки ленты подписок',
         )
-        new_post.save()
 
         follow_index_context_new = set(
             self.authorized_follower.get(

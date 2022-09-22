@@ -179,8 +179,8 @@ class CommentFormTests(TestCase):
 
         form_data = {
             'text': 'Тестовый комментарий',
-            'post': self.post.id,
         }
+
         response = self.authorized_client.post(
             reverse(
                 'posts:add_comment',
@@ -200,5 +200,5 @@ class CommentFormTests(TestCase):
 
         self.assertEqual(len(added_comment), 1)
         self.assertEqual(added_comment[0].text, form_data['text'])
-        self.assertEqual(added_comment[0].post.id, form_data['post'])
+        self.assertEqual(added_comment[0].post.id, self.post.id)
         self.assertEqual(added_comment[0].author, self.user)
